@@ -142,8 +142,12 @@ def cart_to_sphere(cart):
     The arbitrary cases will be defined by atan2
         ex: (0, 0, 0) to (r, 0.7854, 0.9553)
     """
-    theta = torch.atan2(cart[:,1], cart[:,0])
-    phi = torch.atan2(torch.sqrt(torch.sum(torch.square(cart[:,:2]), dim=1)), cart[:,2])
+    # -pi~pi
+    phi = torch.atan2(cart[:,1], cart[:,0])
+    # 0~2pi
+    phi = (phi+torch.tensor(2*pi))%torch.tensor(2*pi)
+    # 0~pi
+    theta = torch.arccos(cart[:,2]/torch.sqrt(torch.sum(torch.square(cart+1e-10), dim=1)))
     return theta, phi
 
 def sh_linear_combination(degree, cart, coefficients):
@@ -153,7 +157,8 @@ def sh_linear_combination(degree, cart, coefficients):
     clear_spherical_harmonics_cache()
     b = cart.size()[0]
     num_basis = (2*degree+2)*(degree+1)//2
-    theta, phi = cart_to_sphere(cart)
+    theta, phi = cart_to_sphere(cart)   
+
     sh = get_spherical_harmonics(0, theta, phi)
     for i in range(1, degree+1):
         sh = torch.hstack([sh, get_spherical_harmonics(i, theta, phi)])
@@ -176,8 +181,8 @@ if __name__=="__main__":
     print(depths)
 
     coords = torch.tensor([[1.0, 0.0, 0.0], 
-                           [1.0, 2.0, 1.0], 
-                           [3.0, 2.0, 2.0]])
+                           [1.0, 2.0, -1.0], 
+                           [3.0, 2.0, -2.0]])
     b = coords.size()[0]
     coefficients = torch.rand((b, num_basis))
     depths = sh_linear_combination(degree, coords, coefficients)
