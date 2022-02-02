@@ -8,6 +8,7 @@ import os
 import glob
 from matplotlib import cm
 import matplotlib
+from spherical_harmonics import sh_linear_combination
 
 np.random.seed(42)
 # torch.manual_seed(42)
@@ -157,6 +158,54 @@ class ODF2D(torch.nn.Module):
 
         return (intersections, depths)
 
+class ODF2DSH(torch.nn.Module):
+
+    def __init__(self, input_size=2, n_layers=6, hidden_size=256, radius=MAX_RADIUS, degree=2):
+        super().__init__()
+
+        self.radius=radius
+        self.degree = degree
+        self.input_size = input_size
+        assert (degree >= 0)
+        num_basis = (2*degree+2)*(degree+1)//2
+        #main network layers
+        main_layers = []
+        main_layers.append(torch.nn.Linear(self.input_size, hidden_size))
+        for l in range(n_layers-1):
+            main_layers.append(torch.nn.Linear(hidden_size, hidden_size))
+        self.network = torch.nn.ModuleList(main_layers)
+
+        
+        #intersection head
+        intersection_layers = [torch.nn.Linear(hidden_size, hidden_size), torch.nn.Linear(hidden_size, 1)]
+        self.intersection_head = torch.nn.ModuleList(intersection_layers)
+
+        #depth head
+        depth_layers = [torch.nn.Linear(hidden_size, hidden_size), torch.nn.Linear(hidden_size, num_basis)]
+        self.depth_head = torch.nn.ModuleList(depth_layers)
+
+        self.relu = torch.nn.ReLU()
+
+    def forward(self, input):
+
+        x = input[:, :self.input_size]
+        for i in range(len(self.network)):
+            x = self.network[i](x)
+            x = self.relu(x)
+
+        
+        intersections = self.intersection_head[0](x)
+        intersections = self.relu(intersections)
+        intersections = self.intersection_head[1](intersections)
+
+        coeff = self.depth_head[0](x)
+        coeff = self.relu(coeff)
+        coeff = self.depth_head[1](coeff)
+        cart = torch.hstack((input[:, 2:], torch.zeros((input.size()[0], 1)).to(input.device)))
+        depths = sh_linear_combination(self.degree, cart, coeff).view(-1, 1)
+
+        return (intersections, depths)
+
 class ODF2DV2(torch.nn.Module):
 
     def __init__(self, input_size=4, n_layers=6, hidden_size=256, radius=MAX_RADIUS):
@@ -191,7 +240,8 @@ class ODF2DV2(torch.nn.Module):
         self.relu = torch.nn.ReLU()
 
     def forward(self, input):
-
+        print(input)
+        exit()
         x = input
         for i in range(len(self.network)):
             x = self.network[i](x)
@@ -205,6 +255,70 @@ class ODF2DV2(torch.nn.Module):
         depths = self.depth_head[0](x)
         depths = self.relu(depths)
         depths = self.depth_head[1](depths)
+
+        constants = self.constant_head[0](x)
+        constants = self.relu(constants)
+        constants = self.constant_head[1](constants)
+
+        constant_mask = self.constant_mask_head[0](x)
+        constant_mask = self.relu(constant_mask)
+        constant_mask = self.constant_mask_head[1](constant_mask)
+
+        return (intersections, depths, constant_mask, constants)
+
+
+class ODF2DV2SH(torch.nn.Module):
+
+    def __init__(self, input_size=2, n_layers=6, hidden_size=256, radius=MAX_RADIUS, degree=2):
+        super().__init__()
+
+        self.radius=radius
+        self.degree = degree
+        self.input_size = input_size
+        assert (degree >= 0)
+        num_basis = (2*degree+2)*(degree+1)//2
+        #main network layers
+        main_layers = []
+        main_layers.append(torch.nn.Linear(self.input_size, hidden_size))
+        for l in range(n_layers-1):
+            main_layers.append(torch.nn.Linear(hidden_size, hidden_size))
+        self.network = torch.nn.ModuleList(main_layers)
+
+        
+        #intersection head
+        intersection_layers = [torch.nn.Linear(hidden_size, hidden_size), torch.nn.Linear(hidden_size, 1)]
+        self.intersection_head = torch.nn.ModuleList(intersection_layers)
+
+        #depth head
+        depth_layers = [torch.nn.Linear(hidden_size, hidden_size), torch.nn.Linear(hidden_size, num_basis)]
+        self.depth_head = torch.nn.ModuleList(depth_layers)
+
+        # constant head
+        constant_layers = [torch.nn.Linear(hidden_size, hidden_size), torch.nn.Linear(hidden_size, 1)]
+        self.constant_head = torch.nn.ModuleList(constant_layers)
+
+        #constant mask head
+        constant_mask_layers = [torch.nn.Linear(hidden_size, hidden_size), torch.nn.Linear(hidden_size, 1)]
+        self.constant_mask_head = torch.nn.ModuleList(constant_mask_layers)
+
+        self.relu = torch.nn.ReLU()
+
+    def forward(self, input):
+        x = input[:, :self.input_size]
+        for i in range(len(self.network)):
+            x = self.network[i](x)
+            x = self.relu(x)
+
+        
+        intersections = self.intersection_head[0](x)
+        intersections = self.relu(intersections)
+        intersections = self.intersection_head[1](intersections)
+
+        coeff = self.depth_head[0](x)
+        coeff = self.relu(coeff)
+        coeff = self.depth_head[1](coeff)
+        cart = torch.hstack((input[:, 2:], torch.zeros((input.size()[0], 1)).to(input.device)))
+        depths = sh_linear_combination(self.degree, cart, coeff).view(-1, 1)
 
         constants = self.constant_head[0](x)
         constants = self.relu(constants)
@@ -761,7 +875,7 @@ def load_model(name, save_dir, last_checkpoint=True, device="cpu"):
         os.mkdir(experiment_dir)
     model_file = f"{name}_last.pt" if last_checkpoint else f"{name}_best.pt"
     model_path = os.path.join(experiment_dir, model_file)
-    model = ODF2DV2().to(device)
+    model = ODF2DSH().to(device) #ODF2DV2SH().to(device)
     if os.path.exists(model_path):
         model.load_state_dict(torch.load(model_path, map_location=torch.device(device)))
     return model
@@ -866,6 +980,75 @@ def save_video_frames(model, direction=[0.,1.], resolution=256, device="cpu", mu
         frames_data["original_depths"] = original_depths.reshape((resolution, resolution))
     np.save(frame_file, frames_data)
 
+def train_no_reg(model, name, batch_size=32, epochs=100, save_dir="F:\\ivl-data\\ODF2D", device="cpu"):
+    residuals = False
+    last_checkpoint_path = os.path.join(save_dir, name, f"{name}_last.pt")
+    best_checkpoint_path = os.path.join(save_dir, name, f"{name}_best.pt")
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-5)
+    train_dataset = TorusDataset2D()
+    train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size)
+    val_dataset = TorusDataset2D()
+    val_dataloader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size)
+    depth_loss = DepthLoss()
+    best_val_loss = np.inf
+    
+    for e in range(epochs):
+        print(f"EPOCH: {e+1}")
+        # Training
+        epoch_train_loss = 0.
+        epoch_losses = {}
+        train_losses = ["train_main", "train_depth"]
+        val_losses = ["val_main"]
+        # TODO: zip names and losses to make changes easier --> and weights?
+        for ln in train_losses+val_losses:
+            epoch_losses[ln] = 0.
+        model.train()
+        for coords, (masks, depths) in tqdm(train_dataloader):
+            coords = coords.to(device)
+            masks = masks.to(device)
+            depths = depths.to(device)
+            
+            optimizer.zero_grad()
+            output = model(coords)
+            d_loss = depth_loss(output, (masks, depths))
+            loss = d_loss
+            loss.backward()
+            optimizer.step()
+
+            epoch_train_loss += loss.detach().cpu()
+            epoch_losses["train_depth"] += d_loss.detach().cpu().numpy()
+
+
+        print(f"Train Loss: {epoch_train_loss/len(train_dataloader)}")
+        epoch_losses["train_main"] = epoch_train_loss.numpy()
+        for loss in train_losses:
+            epoch_losses[loss] /= len(train_dataloader)
+        torch.save(model.state_dict(), last_checkpoint_path)
+
+        # Validation
+        epoch_val_loss = 0.
+        model.eval()
+        for coords, (masks, depths) in tqdm(val_dataloader):
+            coords = coords.to(device)
+            masks = masks.to(device)
+            depths = depths.to(device)
+
+            output = model(coords)
+            loss = depth_loss(output, (masks, depths))
+
+            epoch_val_loss += loss.detach().cpu()
+        print(f"Validation Loss: {epoch_val_loss/len(val_dataloader)}")
+        if epoch_val_loss < best_val_loss:
+            best_val_loss = epoch_val_loss
+            torch.save(model.state_dict(), best_checkpoint_path)
+        
+        epoch_losses["val_main"] = epoch_val_loss.numpy()
+        for loss in val_losses:
+            epoch_losses[loss] /= len(val_dataloader)
+        
+        save_epoch(name, save_dir, epoch_losses)
+        save_video_frames(model, device=device)
+
 def train(model, name, batch_size=32, epochs=100, save_dir="F:\\ivl-data\\ODF2D", device="cpu"):
     residuals = False
     last_checkpoint_path = os.path.join(save_dir, name, f"{name}_last.pt")
@@ -956,14 +1139,15 @@ def train(model, name, batch_size=32, epochs=100, save_dir="F:\\ivl-data\\ODF2D"
 
 
 if __name__ == "__main__":
-    name = "jan27_reg_const"
-    save_dir = "F:\\ivl-data\\ODF2D"
+    name = "feb1_sh_noreg_100" #"feb1_reg_const"
+    save_dir = "/home/johnny/Documents/DDF/coding/results2D/"
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     model = load_model(name, save_dir, last_checkpoint=True, device=device)
 
     # show_surface_points()
     # show_gradients(model, device=device)
-    # train(model,name, epochs=50, save_dir=save_dir, device=device)
+    #train(model,name, epochs=50, save_dir=save_dir, device=device)
+    train_no_reg(model,name, epochs=100, save_dir=save_dir, device=device)
     # show_odf(model, device=device)
     # render_video(name, save_dir)
     # show_gradient_histogram(model, device=device)
