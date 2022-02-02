@@ -46,7 +46,7 @@ if __name__ == '__main__':
     if Args.arch == 'standard':
         NeuralODF = ODFSingleV3(input_size=(120 if usePosEnc else 6), radius=DEPTH_SAMPLER_RADIUS, coord_type=Args.coord_type, pos_enc=usePosEnc, n_layers=10)
     elif Args.arch == 'SH':
-        NeuralODF = ODFSingleV3SH(input_size=(120 if usePosEnc else 6), radius=DEPTH_SAMPLER_RADIUS, coord_type=Args.coord_type, pos_enc=usePosEnc, n_layers=10, degree=2)
+        NeuralODF = ODFSingleV3SH(input_size=(120 if usePosEnc else 6), radius=DEPTH_SAMPLER_RADIUS, coord_type=Args.coord_type, pos_enc=usePosEnc, n_layers=10, degree=Args.degree)
     print('[ INFO ]: Architecture {}'.format(Args.arch))
 
     TrainDevice = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
