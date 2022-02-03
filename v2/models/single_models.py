@@ -419,7 +419,7 @@ class ODFSingleV3SH(supernet.SuperNet):
             # depths = self.relu(depths) # todo: Avoid relu at the last layer?
             # depths = torch.cumsum(depths, dim=1)
             
-            cart = Input[b][:, 3:]
+            cart = Input[b][:, :3]
             depths = sh_linear_combination(self.degree, cart, coeff).view(-1, 1)
 
             if len(depths.size()) == 3:

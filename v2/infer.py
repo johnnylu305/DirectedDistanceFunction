@@ -20,7 +20,7 @@ from odf_dataset import ODFDatasetLiveVisualizer, ODFDatasetVisualizer
 # from pc_sampler import PC_SAMPLER_RADIUS
 from depth_sampler_5d import DEPTH_SAMPLER_RADIUS
 from single_losses import SingleDepthBCELoss, SINGLE_MASK_THRESH
-from single_models import ODFSingleV3
+from single_models import ODFSingleV3, ODFSingleV3SH
 # from pc_odf_dataset import PCODFDatasetLoader as PCDL
 from depth_odf_dataset_5d import DepthODFDatasetLoader as DDL
 from odf_dataset import ODFDatasetLoader as ODL
@@ -72,7 +72,7 @@ def infer(Network, ValDataLoader, Objective, Device, Limit, UsePosEnc):
     return ValLosses, Coords, GTIntersects, GTDepths, PredIntersects, PredDepths
 
 Parser = argparse.ArgumentParser(description='Inference code for NeuralODFs.')
-Parser.add_argument('--arch', help='Architecture to use.', choices=['standard'], default='standard')
+Parser.add_argument('--arch', help='Architecture to use.', choices=['standard', 'SH'], default='standard')
 Parser.add_argument('--coord-type', help='Type of coordinates to use, valid options are points | direction | pluecker.', choices=['points', 'direction', 'pluecker'], default='direction')
 Parser.add_argument('--rays-per-shape', help='Number of ray samples per object shape.', default=1000, type=int)
 Parser.add_argument('--force-test-on-train', help='Choose to test on the training data. CAUTION: Use this for debugging only.', action='store_true', required=False)
@@ -82,6 +82,7 @@ Parser.add_argument('--no-posenc', help='Choose not to use positional encoding.'
 Parser.set_defaults(no_posenc=False)
 Parser.add_argument('-v', '--viz-limit', help='Limit visualizations to these many rays.', required=False, type=int, default=1000)
 Parser.add_argument('-l', '--val-limit', help='Limit validation samples.', required=False, type=int, default=-1)
+Parser.add_argument('--degree', help='number of degree to generate the SH basis', required=False, type=int, default=2)
 
 if __name__ == '__main__':
     Args, _ = Parser.parse_known_args()
@@ -97,6 +98,10 @@ if __name__ == '__main__':
     print('[ INFO ]: Using positional encoding:', usePosEnc)
     if Args.arch == 'standard':
         NeuralODF = ODFSingleV3(input_size=(120 if usePosEnc else 6), radius=DEPTH_SAMPLER_RADIUS, coord_type=Args.coord_type, pos_enc=usePosEnc, n_layers=10)
+    elif Args.arch == 'SH':
+        NeuralODF = ODFSingleV3SH(input_size=(120 if usePosEnc else 6), radius=DEPTH_SAMPLER_RADIUS, coord_type=Args.coord_type, pos_enc=usePosEnc, n_layers=10, degree=Args.degree)
+    butils.seedRandom(Args.seed)
+    print('[ INFO ]: Architecture {}'.format(Args.arch))
 
     Device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     NeuralODF.setupCheckpoint(Device)
@@ -119,7 +124,7 @@ if __name__ == '__main__':
     #     Rays = torch.cat(Rays, dim=0)
 
     app = QApplication(sys.argv)
-    VizIdx = [0, 1, 2, 3, 4]
+    VizIdx = [i for i in range(50)]#[0, 1, 2, 3, 4]
 
     GTViz = []
     PredViz = []
