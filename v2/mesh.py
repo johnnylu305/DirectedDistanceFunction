@@ -23,7 +23,7 @@ from odf_dataset import ODFDatasetLiveVisualizer, ODFDatasetVisualizer
 # from pc_sampler import PC_SAMPLER_RADIUS
 from depth_sampler_5d import DEPTH_SAMPLER_RADIUS
 from single_losses import SingleDepthBCELoss, SINGLE_MASK_THRESH
-from single_models import ODFSingleV3
+from single_models import ODFSingleV3, ODFSingleV3SH
 # from pc_odf_dataset import PCODFDatasetLoader as PCDL
 from depth_odf_dataset_5d import DepthODFDatasetLoader as DDL
 from odf_dataset import ODFDatasetLoader as ODL
@@ -157,12 +157,13 @@ def extract_mesh_multiple_directions(Network, Device, resolution=256):
 
 
 Parser = argparse.ArgumentParser(description='Inference code for NeuralODFs.')
-Parser.add_argument('--arch', help='Architecture to use.', choices=['standard'], default='standard')
+Parser.add_argument('--arch', help='Architecture to use.', choices=['standard', 'SH'], default='standard')
 Parser.add_argument('--coord-type', help='Type of coordinates to use, valid options are points | direction | pluecker.', choices=['points', 'direction', 'pluecker'], default='direction')
 Parser.add_argument('-s', '--seed', help='Random seed.', required=False, type=int, default=42)
 Parser.add_argument('--no-posenc', help='Choose not to use positional encoding.', action='store_true', required=False)
 Parser.add_argument('--resolution', help='Resolution of the mesh to extract', type=int, default=256)
 Parser.set_defaults(no_posenc=False)
+Parser.add_argument('--degree', help='number of degree to generate the SH basis', required=False, type=int, default=2)
 
 if __name__ == '__main__':
     Args, _ = Parser.parse_known_args()
@@ -177,6 +178,10 @@ if __name__ == '__main__':
     print('[ INFO ]: Using positional encoding:', usePosEnc)
     if Args.arch == 'standard':
         NeuralODF = ODFSingleV3(input_size=(120 if usePosEnc else 6), radius=DEPTH_SAMPLER_RADIUS, coord_type=Args.coord_type, pos_enc=usePosEnc, n_layers=10)
+    elif Args.arch == 'SH':
+        NeuralODF = ODFSingleV3SH(input_size=(120 if usePosEnc else 6), radius=DEPTH_SAMPLER_RADIUS, coord_type=Args.coord_type, pos_enc=usePosEnc, n_layers=10, degree=Args.degree)
+    print('[ INFO ]: Architecture {}'.format(Args.arch))
+
 
     Device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     # Device = torch.device("cpu")

@@ -3,7 +3,7 @@ import torch.nn as nn
 import beacon.supernet as supernet
 import sys
 import odf_v2_utils as o2utils
-from spherical_harmonics import sh_linear_combination
+from spherical_harmonics import SH
 
 class ODFSingleV3(supernet.SuperNet):
     # class LF4D(nn.Module):
@@ -323,7 +323,7 @@ class ODFSingleV3SH(supernet.SuperNet):
     A linear combination of the spherical harmonic as differential forward map.
     '''
 
-    def __init__(self, input_size=3, n_layers=6, hidden_size=256, radius=1.25, coord_type='direction', pos_enc=True, degree=2, Args=None):
+    def __init__(self, input_size=3, n_layers=6, hidden_size=256, radius=1.25, coord_type='direction', pos_enc=True, degrees=[2, 2], Args=None):
         super().__init__(Args=Args)
 
         # store args
@@ -331,10 +331,8 @@ class ODFSingleV3SH(supernet.SuperNet):
         self.preprocessing = coord_type
         self.pos_enc = pos_enc
         self.radius = radius
-        self.degree = degree
+        self.degrees = degrees
         self.input_size = input_size
-        assert (degree >= 0)
-        num_basis = (2*degree+2)*(degree+1)//2
 
         assert (n_layers > 1)
 
@@ -357,15 +355,15 @@ class ODFSingleV3SH(supernet.SuperNet):
 
         # Define the intersection head
         intersection_layers = [
-            nn.Linear(hidden_size+3, hidden_size),
-            nn.Linear(hidden_size, n_intersections)
+            nn.Linear(hidden_size, hidden_size),
+            nn.Linear(hidden_size, n_intersections*(self.degrees[1]+1)**2)
         ]
         self.intersection_head = nn.ModuleList(intersection_layers)
 
         # Define the depth head
         depth_layers = [
             nn.Linear(hidden_size, hidden_size),
-            nn.Linear(hidden_size, n_intersections*num_basis)
+            nn.Linear(hidden_size, n_intersections*(self.degrees[0]+1)**2)
         ]
         self.depth_head = nn.ModuleList(depth_layers)
 
@@ -391,8 +389,8 @@ class ODFSingleV3SH(supernet.SuperNet):
                 x = Input[b][:, :self.input_size]
                 BInput = Input[b][:, :self.input_size]
             else:
-                x = o2utils.positional_encoding_tensor(Input[b][:, :self.input_size//20], L=10)
-                BInput = o2utils.positional_encoding_tensor(Input[b][:, :self.input_size//20], L=10)
+                x = o2utils.positional_encoding_tensor(Input[b][:, :self.input_size], L=10)
+                BInput = o2utils.positional_encoding_tensor(Input[b][:, :self.input_size], L=10)
             for i in range(len(self.network)):
                 if i + 1 in self.pos_enc_layers:
                     x = self.network[i](torch.cat([BInput, x], dim=1))
@@ -403,25 +401,31 @@ class ODFSingleV3SH(supernet.SuperNet):
 
             # intersection head
             #intersections = self.intersection_head[0](x)
-            intersections = self.intersection_head[0](torch.cat([x, Input[b][:, 3:]], dim=1))
-            intersections = self.relu(intersections)
+            intersect_coeff = self.intersection_head[0](x)
+            intersect_coeff = self.relu(intersect_coeff)
             # intersections = self.layernorm(intersections)
-            intersections = self.intersection_head[1](intersections)
+            intersect_coeff = self.intersection_head[1](intersect_coeff)
             # intersections = torch.sigmoid(intersections)
-            if len(intersections.size()) == 3:
-                intersections = torch.squeeze(intersections, dim=1)
+            #if len(intersections.size()) == 3:
+            #    intersections = torch.squeeze(intersections, dim=1)
 
             # depth head
-            coeff = self.depth_head[0](x)
-            coeff = self.relu(coeff)
+            depth_coeff = self.depth_head[0](x)
+            depth_coeff = self.relu(depth_coeff)
             # depths = self.layernorm(depths)
             # enforce strictly increasing depth values
-            coeff = self.depth_head[1](coeff)
+            depth_coeff = self.depth_head[1](depth_coeff)
             # depths = self.relu(depths) # todo: Avoid relu at the last layer?
             # depths = torch.cumsum(depths, dim=1)
             
-            cart = Input[b][:, 3:]
-            depths = sh_linear_combination(self.degree, cart, coeff).view(-1, 1)
+            cart = Input[b][:, self.input_size:]
+            sh = SH(self.degrees[0], cart)
+            
+            depths = sh.linear_combination(self.degrees[0], depth_coeff, clear=True).view(-1, 1)
+            intersections = sh.linear_combination(self.degrees[1], intersect_coeff).view(-1, 1)
+
+            if len(intersections.size()) == 3:
+                intersections = torch.squeeze(intersections, dim=1)
 
             if len(depths.size()) == 3:
                 depths = torch.squeeze(depths, dim=1)

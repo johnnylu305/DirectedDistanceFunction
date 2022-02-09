@@ -29,7 +29,7 @@ Parser.set_defaults(force_test_on_train=False)
 Parser.add_argument('-s', '--seed', help='Random seed.', required=False, type=int, default=42)
 Parser.add_argument('--no-posenc', help='Choose not to use positional encoding.', action='store_true', required=False)
 Parser.set_defaults(no_posenc=False)
-Parser.add_argument('--degree', help='number of degree to generate the SH basis', required=False, type=int, default=2)
+Parser.add_argument('--degrees', help='number of basis for [depth, intersect]', required=False, type=list, default="1, 2")
 
 import faulthandler; faulthandler.enable()
 
@@ -46,7 +46,7 @@ if __name__ == '__main__':
     if Args.arch == 'standard':
         NeuralODF = ODFSingleV3(input_size=(120 if usePosEnc else 6), radius=DEPTH_SAMPLER_RADIUS, coord_type=Args.coord_type, pos_enc=usePosEnc, n_layers=10)
     elif Args.arch == 'SH':
-        NeuralODF = ODFSingleV3SH(input_size=(120 if usePosEnc else 6), radius=DEPTH_SAMPLER_RADIUS, coord_type=Args.coord_type, pos_enc=usePosEnc, n_layers=10, degree=Args.degree)
+        NeuralODF = ODFSingleV3SH(input_size=(120 if usePosEnc else 6), radius=DEPTH_SAMPLER_RADIUS, coord_type=Args.coord_type, pos_enc=usePosEnc, n_layers=10, degrees=Args.degrees)
     print('[ INFO ]: Architecture {}'.format(Args.arch))
 
     TrainDevice = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')

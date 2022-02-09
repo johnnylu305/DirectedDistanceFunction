@@ -150,11 +150,13 @@ def cart_to_sphere(cart):
     theta = torch.arccos(cart[:,2]/torch.sqrt(torch.sum(torch.square(cart+1e-10), dim=1)))
     return theta, phi
 
-def sh_linear_combination(degree, cart, coefficients):
+
+def sh_linear_combination(degree, cart, coefficients, clear=True):
     """
     Linear combination of SH
     """
-    clear_spherical_harmonics_cache()
+    if clear:
+        clear_spherical_harmonics_cache()
     b = cart.size()[0]
     num_basis = (2*degree+2)*(degree+1)//2
     theta, phi = cart_to_sphere(cart)   
@@ -165,6 +167,35 @@ def sh_linear_combination(degree, cart, coefficients):
     
     linear_comb = torch.bmm(coefficients.view(b, 1, num_basis), sh.view(b, num_basis, 1).detach()).view(b)
     return linear_comb
+
+
+class SH:
+
+    def __init__(self, degree, cart):
+        self.degree = -1
+        self.theta, self.phi = cart_to_sphere(cart)
+        self.all_sh = torch.empty((cart.size()[0], 0)).to(self.theta.device)
+        self.update_spherical_harmonics(degree)
+    
+    def update_spherical_harmonics(self, degree):
+        assert degree>=0
+        if degree>self.degree:
+            for i in range(self.degree+1, degree+1):
+                self.all_sh = torch.hstack([self.all_sh, 
+                                            get_spherical_harmonics(i, self.theta, self.phi)])
+            self.degree = degree
+
+    def linear_combination(self, degree, coefficients, clear=False):
+        """
+        get all SH from degree 0 to degree
+        """
+        if clear:
+            clear_spherical_harmonics_cache()
+        self.update_spherical_harmonics(degree)
+        num_basis = (degree+1)**2
+        linear_comb = torch.bmm(coefficients.view(-1, 1, num_basis), 
+                                self.all_sh[:, :num_basis].view(-1, num_basis, 1).detach())
+        return linear_comb
 
 if __name__=="__main__":
     degree = 3
