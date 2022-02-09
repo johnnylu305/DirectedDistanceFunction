@@ -415,7 +415,7 @@ class ODF2DV3SH(torch.nn.Module):
 # ######################## LOSSES ########################
 
 
-MASK_THRESH = 0.8
+MASK_THRESH = 0.5
 DEPTH_LAMBDA = 5.0
 class DepthLoss(torch.nn.Module):
 
