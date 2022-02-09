@@ -341,23 +341,23 @@ class ODFSingleV3SH(supernet.SuperNet):
         # set which layers (aside from the first) should have the positional encoding passed in
         if self.pos_enc:
             self.pos_enc_layers = [4]
-            self.input_size = input_size*20 #120
+            self.input_size = 120
         else:
             self.pos_enc_layers = []
 
         # Define the main network body
         main_layers = []
-        main_layers.append(nn.Linear(input_size, hidden_size))
+        main_layers.append(nn.Linear(input_size//2, hidden_size))
         for l in range(n_layers - 1):
             if l + 2 in self.pos_enc_layers:
-                main_layers.append(nn.Linear(hidden_size + input_size, hidden_size))
+                main_layers.append(nn.Linear(hidden_size + input_size//2, hidden_size))
             else:
                 main_layers.append(nn.Linear(hidden_size, hidden_size))
         self.network = nn.ModuleList(main_layers)
 
         # Define the intersection head
         intersection_layers = [
-            nn.Linear(hidden_size, hidden_size),
+            nn.Linear(hidden_size+input_size//2, hidden_size),
             nn.Linear(hidden_size, n_intersections)
         ]
         self.intersection_head = nn.ModuleList(intersection_layers)
@@ -388,11 +388,11 @@ class ODFSingleV3SH(supernet.SuperNet):
         for b in range(B):
             if not self.pos_enc:
                 # only use start point
-                x = Input[b][:, :self.input_size]
-                BInput = Input[b][:, :self.input_size]
+                x = Input[b][:, :3]
+                BInput = Input[b][:, :3]
             else:
-                x = o2utils.positional_encoding_tensor(Input[b][:, :self.input_size//20], L=10)
-                BInput = o2utils.positional_encoding_tensor(Input[b][:, :self.input_size//20], L=10)
+                x = o2utils.positional_encoding_tensor(Input[b][:, :3], L=10)
+                BInput = o2utils.positional_encoding_tensor(Input[b][:, :3], L=10)
             for i in range(len(self.network)):
                 if i + 1 in self.pos_enc_layers:
                     x = self.network[i](torch.cat([BInput, x], dim=1))
@@ -402,7 +402,7 @@ class ODFSingleV3SH(supernet.SuperNet):
                 # x = self.layernorm(x)
 
             # intersection head
-            intersections = self.intersection_head[0](x)
+            intersections = self.intersection_head[0](torch.cat([x, Input[b][:, 3:]], dim=1))
             intersections = self.relu(intersections)
             # intersections = self.layernorm(intersections)
             intersections = self.intersection_head[1](intersections)
@@ -419,7 +419,7 @@ class ODFSingleV3SH(supernet.SuperNet):
             # depths = self.relu(depths) # todo: Avoid relu at the last layer?
             # depths = torch.cumsum(depths, dim=1)
             
-            cart = Input[b][:, :3]
+            cart = Input[b][:, 3:]
             depths = sh_linear_combination(self.degree, cart, coeff).view(-1, 1)
 
             if len(depths.size()) == 3:
