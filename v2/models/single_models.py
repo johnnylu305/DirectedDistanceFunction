@@ -323,7 +323,7 @@ class ODFSingleV3SH(supernet.SuperNet):
     A linear combination of the spherical harmonic as differential forward map.
     '''
 
-    def __init__(self, input_size=6, n_layers=6, hidden_size=256, radius=1.25, coord_type='direction', pos_enc=True, degree=2, Args=None):
+    def __init__(self, input_size=3, n_layers=6, hidden_size=256, radius=1.25, coord_type='direction', pos_enc=True, degree=2, Args=None):
         super().__init__(Args=Args)
 
         # store args
@@ -357,7 +357,7 @@ class ODFSingleV3SH(supernet.SuperNet):
 
         # Define the intersection head
         intersection_layers = [
-            nn.Linear(hidden_size, hidden_size),
+            nn.Linear(hidden_size+3, hidden_size),
             nn.Linear(hidden_size, n_intersections)
         ]
         self.intersection_head = nn.ModuleList(intersection_layers)
@@ -402,7 +402,8 @@ class ODFSingleV3SH(supernet.SuperNet):
                 # x = self.layernorm(x)
 
             # intersection head
-            intersections = self.intersection_head[0](x)
+            #intersections = self.intersection_head[0](x)
+            intersections = self.intersection_head[0](torch.cat([x, Input[b][:, 3:]], dim=1))
             intersections = self.relu(intersections)
             # intersections = self.layernorm(intersections)
             intersections = self.intersection_head[1](intersections)
@@ -419,7 +420,7 @@ class ODFSingleV3SH(supernet.SuperNet):
             # depths = self.relu(depths) # todo: Avoid relu at the last layer?
             # depths = torch.cumsum(depths, dim=1)
             
-            cart = Input[b][:, :3]
+            cart = Input[b][:, 3:]
             depths = sh_linear_combination(self.degree, cart, coeff).view(-1, 1)
 
             if len(depths.size()) == 3:
