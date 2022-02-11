@@ -323,7 +323,7 @@ class ODFSingleV3SH(supernet.SuperNet):
     A linear combination of the spherical harmonic as differential forward map.
     '''
 
-    def __init__(self, input_size=3, n_layers=6, hidden_size=256, radius=1.25, coord_type='direction', pos_enc=True, degrees=[2, 2], Args=None):
+    def __init__(self, input_size=6, n_layers=6, hidden_size=256, radius=1.25, coord_type='direction', pos_enc=True, degrees=[2, 2], Args=None):
         super().__init__(Args=Args)
 
         # store args
@@ -339,16 +339,16 @@ class ODFSingleV3SH(supernet.SuperNet):
         # set which layers (aside from the first) should have the positional encoding passed in
         if self.pos_enc:
             self.pos_enc_layers = [4]
-            self.input_size = input_size*20 #120
+            self.input_size = 120
         else:
             self.pos_enc_layers = []
 
         # Define the main network body
         main_layers = []
-        main_layers.append(nn.Linear(input_size, hidden_size))
+        main_layers.append(nn.Linear(input_size//2, hidden_size))
         for l in range(n_layers - 1):
             if l + 2 in self.pos_enc_layers:
-                main_layers.append(nn.Linear(hidden_size + input_size, hidden_size))
+                main_layers.append(nn.Linear(hidden_size + input_size//2, hidden_size))
             else:
                 main_layers.append(nn.Linear(hidden_size, hidden_size))
         self.network = nn.ModuleList(main_layers)
@@ -386,11 +386,11 @@ class ODFSingleV3SH(supernet.SuperNet):
         for b in range(B):
             if not self.pos_enc:
                 # only use start point
-                x = Input[b][:, :self.input_size]
-                BInput = Input[b][:, :self.input_size]
+                x = Input[b][:, :3]
+                BInput = Input[b][:, :3]
             else:
-                x = o2utils.positional_encoding_tensor(Input[b][:, :self.input_size], L=10)
-                BInput = o2utils.positional_encoding_tensor(Input[b][:, :self.input_size], L=10)
+                x = o2utils.positional_encoding_tensor(Input[b][:, :3], L=10)
+                BInput = o2utils.positional_encoding_tensor(Input[b][:, :3], L=10)
             for i in range(len(self.network)):
                 if i + 1 in self.pos_enc_layers:
                     x = self.network[i](torch.cat([BInput, x], dim=1))
@@ -418,10 +418,10 @@ class ODFSingleV3SH(supernet.SuperNet):
             # depths = self.relu(depths) # todo: Avoid relu at the last layer?
             # depths = torch.cumsum(depths, dim=1)
             
-            cart = Input[b][:, self.input_size:]
+            cart = Input[b][:, 3:]
             sh = SH(self.degrees[0], cart)
             
-            depths = sh.linear_combination(self.degrees[0], depth_coeff, clear=True).view(-1, 1)
+            depths = sh.linear_combination(self.degrees[0], depth_coeff).view(-1, 1)
             intersections = sh.linear_combination(self.degrees[1], intersect_coeff).view(-1, 1)
 
             if len(intersections.size()) == 3:

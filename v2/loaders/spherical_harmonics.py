@@ -147,7 +147,7 @@ def cart_to_sphere(cart):
     # 0~2pi
     phi = (phi+torch.tensor(2*pi))%torch.tensor(2*pi)
     # 0~pi
-    theta = torch.arccos(cart[:,2]/torch.sqrt(torch.sum(torch.square(cart+1e-10), dim=1)))
+    theta = torch.arccos(cart[:,2]/(torch.sqrt(torch.sum(torch.square(cart), dim=1))+1e-10))
     return theta, phi
 
 
@@ -172,6 +172,7 @@ def sh_linear_combination(degree, cart, coefficients, clear=True):
 class SH:
 
     def __init__(self, degree, cart):
+        clear_spherical_harmonics_cache()
         self.degree = -1
         self.theta, self.phi = cart_to_sphere(cart)
         self.all_sh = torch.empty((cart.size()[0], 0)).to(self.theta.device)
